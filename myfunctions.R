@@ -1,5 +1,5 @@
 ###############
-## Contains my own created functions
+## Contains my own created functions and functions given in class
 # Name: Aidan Patt
 # Mon Mar 17 22:33:54 2025 ------------------------------
 
@@ -105,6 +105,5 @@ shift_loc <- function(df, col_name, dat_name, num_col, num_shift){
   return(df)
 }
 
-# function to truncate values
 
 
