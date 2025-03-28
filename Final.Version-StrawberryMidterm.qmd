@@ -1,0 +1,647 @@
+---
+title: "Final.Version-StrawberryMidterm"
+author: "Aidan Patt"
+format: pdf
+editor: visual
+---
+
+# EDA of Strawberries
+
+## Libraries
+
+```{r}
+#| warning: false
+library(knitr)
+library(kableExtra)
+library(tidyr)
+library(tidyverse)
+library(stringr)
+library(esquisse)
+library(dplyr)
+
+
+```
+
+## Citations
+
+### For Code
+
+[stack overflow](https://stackoverflow.com/questions/71424270/how-to-add-a-string-only-to-a-subset-of-a-character-column-in-r)
+
+[sparkbyexamples.com](https://sparkbyexamples.com/r-programming/add-column-to-dataframe-in-r/)
+
+[Data Wrangling with R](https://users.ssc.wisc.edu/~hemken/Rworkshops/dwr/merge-tidy.html)
+
+[R Markdown Cookbook](https://bookdown.org/yihui/rmarkdown-cookbook/kableextra.html)
+
+### For Research
+
+[Inside Climate News](https://insideclimatenews.org/news/20122024/california-agricultural-toxic-pesticides-disproportionate-impact/)
+
+[CA Pesticide Use](https://www.pesticidereform.org/ca-pesticide-use/#:~:text=California%20leads%20the%20U.S.%20in%20pesticide%20use.)
+
+[Crop Nutrition](https://www.cropnutrition.com/resource-library/what-is-potash/)
+
+[EPA R.E.D FACTS: Thiram](https://www3.epa.gov/pesticides/chem_search/reg_actions/reregistration/fs_PC-079801_1-Sep-04.pdf)
+
+# The Data
+
+```{r}
+# Data set  used for chemical usage information
+strawberry = read.csv("strawb_mar6.csv")
+
+# Data set used for sales and production information
+sp_straw = read.csv("strawberry_sales&production.csv")
+
+```
+
+For this project two data sets were cleaned and used. The original data set, given in class was used to obtain information about the amount of chemicals used for strawberry farming for California and Florida. The second data set was used to obtain more information about the sales and production of strawberries for each state. The data cleaning process and analysis will focus on California and Florida because they are the largest producers of strawberries in the United States. The document will first focus on data cleaning and visualization for chemical usage and then focus on sales and production respectively.
+
+# Chemical Usage
+
+### Data Cleaning for Chemical Information
+
+The original data set has a lot of unnecessary values and columns, with myriad different measurements, which needs to be cleaned for any useful analysis to occur. There is no chemical information given in census, so the first thing done was to separate the data into census and survey data sets. After that the survey data set was taken and further separated into two data sets for each state, California and Florida. For each state, since the focus was on individual chemical use, rows totaling all chemical usage were taken out. Additionally, there were many chemicals that had undisclosed data, and these were removed from the data set, in the hopes that there would be similar chemicals for both states where data was disclosed, and so that comparison could be done across these chemicals.
+
+```{r}
+
+#| echo: false
+#| label: Cleaning up survey data for California and Florida
+
+
+source("myfunctions.R")
+
+# getting rid of uneccessary columns
+strawberry = drop_one_val_col(strawberry)
+
+# only looking a periods that are a year, and getting rid of 
+# unecessary/redundant columns
+strawberry = strawberry |> filter(Period == "YEAR") |> 
+  select(!Week.Ending & !Period & !State.ANSI)
+
+## breaking up strawberry into census and survey
+
+## Census
+strawb_c = strawberry |> filter(Program == "CENSUS")
+
+## Survey
+strawb_s = strawberry |> filter(Program == "SURVEY")
+
+
+## census for florida and california
+straw_c_f = strawb_c |> filter(State == "FLORIDA")
+
+straw_c_c = strawb_c |> filter(State == "CALIFORNIA")
+
+
+## survey for florida and california
+straw_s_c = strawb_s |> filter(State == "CALIFORNIA")
+straw_s_f = strawb_s |> filter(State == "FLORIDA")
+
+
+### Cleaning survey data for florida
+# straw_s_f
+
+# Eliminating all columns with just one value
+straw_s_f = drop_one_val_col(straw_s_f)
+
+
+# making new table with just total values 
+tot_straw_s_f = straw_s_f |> filter(Domain == "TOTAL")
+
+# Getting rid of total values from the original table
+straw_s_f = straw_s_f |> filter(Domain != "TOTAL")
+
+# Making a column strictly for chemical name
+straw_s_f = straw_s_f |> separate_wider_delim(
+  cols = Domain.Category,
+  delim = " (",
+  names = c("domainR", "Chemical.Name"),
+  too_many = "merge"
+)
+
+# getting rid of redundant column
+straw_s_f = straw_s_f |> select(!domainR)
+
+# separating chemical name into the chemical name and number
+straw_s_f = straw_s_f |> separate_wider_delim(
+  cols = Chemical.Name,
+  delim = " = ",
+  names = c("Chemical.Name", "Chemical.Number"),
+  too_few = "align_start"
+)
+
+# cleaning up parenthesis in the columns
+straw_s_f$Chemical.Number = gsub(")", "", as.character(straw_s_f$Chemical.Number))
+straw_s_f$Chemical.Name = gsub(")", "", as.character(straw_s_f$Chemical.Name))
+straw_s_f$Chemical.Name = sub("ETHYL (2E;4Z-DECADIENOATE", 
+                          paste0("ETHYL (2E;4Z-DECADIENOATE",")"), 
+                          as.character(straw_s_f$Chemical.Name),
+                          fixed = TRUE)
+
+# making a list of undisclosed chemicals and removing total rows
+undisclosed_chem_f = straw_s_f |> filter(Chemical.Name != "TOTAL") |>
+  filter(Value == " (D)" | Value == " (NA)")
+
+# Removing undisclosed data from the table
+straw_s_f = straw_s_f |> filter(Chemical.Name != "TOTAL") |>
+  filter(Value != " (D)" & Value != " (NA)")
+
+# splitting Data.item column into multiple columns
+straw_s_f = straw_s_f |> separate_wider_delim(
+  cols = Data.Item,
+  delim = ",",
+  names = c("Fruit", "Bearing Type", "Metric"),
+  too_many = "merge"
+)
+
+# Getting rid of columns with one value
+straw_s_f = drop_one_val_col(straw_s_f)
+
+
+### Cleaning survey data for California
+
+# straw_s_c
+straw_s_c = drop_one_val_col(straw_s_c)
+
+# unique(straw_s_c$Data.Item)
+# unique(straw_s_c$Domain)
+
+# making new table with just total values 
+tot_straw_s_c = straw_s_c |> filter(Domain == "TOTAL")
+
+# Getting rid of total from the table
+straw_s_c = straw_s_c |> filter(Domain != "TOTAL")
+
+# Making a column strictly for chemical name
+#unique(straw_s_c$Domain.Category)
+straw_s_c = straw_s_c |> separate_wider_delim(
+  cols = Domain.Category,
+  delim = " (",
+  names = c("domainR", "Chemical.Name"),
+  too_many = "merge"
+)
+
+straw_s_c = straw_s_c |> select(!domainR)
+
+straw_s_c = straw_s_c |> separate_wider_delim(
+  cols = Chemical.Name,
+  delim = " = ",
+  names = c("Chemical.Name", "Chemical.Number"),
+  too_few = "align_start"
+)
+
+# cleaning up parenthesis in the columns
+straw_s_c$Chemical.Number = gsub(")", "", as.character(straw_s_c$Chemical.Number))
+straw_s_c$Chemical.Name = gsub(")", "", as.character(straw_s_c$Chemical.Name))
+
+# Making a table of undisclosed chemicals for California
+undisclosed_chem_c = straw_s_c |> filter(Chemical.Name != "TOTAL") |>
+  filter(Value == " (D)" | Value == " (NA)")
+
+# Removing undisclosed data from the table
+straw_s_c = straw_s_c |> filter(Chemical.Name != "TOTAL") |>
+  filter(Value != " (D)" & Value != " (NA)")
+
+# splitting Data.item column into multiple columns
+straw_s_c = straw_s_c |> separate_wider_delim(
+  cols = Data.Item,
+  delim = ",",
+  names = c("Fruit", "Bearing Type", "Metric"),
+  too_many = "merge"
+)
+
+# Getting rid of columns with one value
+straw_s_c = drop_one_val_col(straw_s_c)
+
+
+```
+
+### Deciding on the Metric for Chemical Use
+
+There were many different measurements given for chemical usage. It seemed important to control for size, since one state might have significantly more farmland than the other, if a metric for land is not taken into account, and data was given based off only the amount chemicals used by state it could lead to misleading differences. However it is also important to get some type of aggregate annual value, rather than amount used at each application. Due to these considerations, the metric used was the average chemical use in lb/acre/year.
+
+```{r}
+#| echo: false
+#| label: Looking at the most recent year 2023 and doing further data cleaning
+
+# straw_s_f
+# straw_s_c
+
+
+
+# Table for Florida values in 2023, chemical use in lb/acre/year, avg
+str_s_f.lb.a = straw_s_f |> filter(Year == 2023 &
+                                     Metric == " MEASURED IN LB / ACRE / YEAR, AVG")
+
+# Table for California values in 2023, chemical use in lb/acre/year, avg
+str_s_c.lb.a = straw_s_c |> filter(Year == 2023 &
+                                     Metric == " MEASURED IN LB / ACRE / YEAR, AVG")
+
+
+### Need to turn the Values into numbers instead of strings
+
+# Doing so for the california table
+str_s_c.lb.a$Value = parse_number(str_s_c.lb.a$Value)
+
+# Doing so for the florida table
+str_s_f.lb.a$Value = parse_number(str_s_f.lb.a$Value)
+
+
+## Getting rid of type column, bc it's all applications
+# getting rid of chemical number bc already have chemical name
+# getting rid of metric column
+    # Remeber units are " MEASURED IN LB / ACRE / YEAR, AVG"
+
+# For California
+str_s_c.lb.a = str_s_c.lb.a |> drop_one_val_col() |> select(!Chemical.Number)
+
+# For Florida
+str_s_f.lb.a = str_s_f.lb.a |> drop_one_val_col() |> select(!Chemical.Number)
+```
+
+### Deciding on Chemicals to Compare
+
+There were serveral reasons for the chemicals that were chosen. While dichloropronene is one of highest used chemicals in California, there is no information of it being used in Florida, it is not even a part of the chemicals with usage that is undisclosed. It seemed valuable to look into this differing use in dichloropronene, so it was one of the chemicals that made the list because Califoria used it a lot, and Florida did not at all. Additionally while both use potash as a fertilizer, it was also notable that California's use of it is almost double that of Floridas. And as for the top ten chemicals, Thiram seemed to be the only one on the list for both where Florida used more on average.
+
+```{r}
+#| echo: false
+#| label: Examining California and Florida
+
+# str_s_c.lb.a
+# str_s_f.lb.a
+
+
+# Sorting the tables so that they show the chemicals with the highest usage
+# for each
+
+# Highest to lowest Chemical usage for California
+str_s_c.lb.a = str_s_c.lb.a |> arrange(desc(Value))
+
+# Creating tibble of top 10 chemicals used for California
+top10chem_c = head(str_s_c.lb.a, 10)
+
+# Highest to Lowest Chemical usage for Florida
+str_s_f.lb.a = str_s_f.lb.a |> arrange(desc(Value))
+
+# Creating tibble of top 10 chemicals used for Florida
+top10chem_f = head(str_s_f.lb.a, 10)
+
+```
+
+### Tables of Chemical Usage for Each State
+
+```{r}
+#| echo: false
+#| label: visualizgin top 10 table for California
+
+kable(top10chem_c, booktabs = TRUE,
+      caption = "Top 10 Chemicals used in California",
+      align = "llc",
+      col.names = c("Type", "Chemical Name", "Average use in lb/acre/yr")) %>%
+  kable_styling(latex_options = "striped", font_size = 10) 
+  
+```
+
+```{r}
+#| echo: false
+#| label: visualizgin top 10 table for Florida
+
+kable(top10chem_f, booktabs = TRUE,
+      caption = "Top 10 Chemicals used in Florida",
+      align = "llc",
+      col.names = c("Type", "Chemical Name", "Average use in lb/acre/yr")) %>%
+  kable_styling(latex_options = "striped", font_size = 10) 
+
+
+```
+
+### Data Visualization for Usage of Chosen Three Chemicals
+
+```{r}
+#| echo: false
+#| label: Data Visualization for 3 chemical usages across Florida and California
+
+# Making Table for visualization
+
+# 3 Chemicals to focus on
+# DICHLOROPROPENE 
+# POTASH
+# THIRAM
+
+str_s_c.lb.a3c = str_s_c.lb.a |> filter(Chemical.Name == "DICHLOROPROPENE" |
+                                Chemical.Name == "POTASH" |
+                                Chemical.Name == "THIRAM")
+
+str_s_f.lb.a3c = str_s_f.lb.a |> filter(Chemical.Name == "DICHLOROPROPENE" |
+                                Chemical.Name == "POTASH" |
+                                Chemical.Name == "THIRAM")
+
+# Adding back state so can put tables together and use it as a variable
+str_s_c.lb.a3c$State = c(rep("CALIFORNIA", 3))
+str_s_f.lb.a3c$State = c(rep("FLORIDA", 2))
+
+chem.table = bind_rows(str_s_c.lb.a3c, str_s_f.lb.a3c)
+
+# Since  DICHLOROPROPENE is on not in the (D) or NA list of Florida
+# putting it as a value of 0 usage in Florida
+
+obs.0 = data.frame(Domain = c("CHEMICAL, OTHER"),
+                Chemical.Name = c("DICHLOROPROPENE"),
+                Value = c(0),
+                State = c("FLORIDA"))
+chem.table = bind_rows(chem.table,obs.0)
+
+# esquisser(chem.table)
+
+ggplot(chem.table) +
+  aes(x = Chemical.Name, y = Value, colour = State) +
+  geom_point() +
+  scale_color_hue(direction = 1) +
+  labs(
+    x = "Chemical",
+    y = "Average Amount Used in lb/acre/year",
+    title = "Figure 1: Chemical Usage for California and Florida"
+  ) +
+  ggthemes::theme_stata()
+
+
+```
+
+### Discussion
+
+The reason dichloropropene is used so much in California, seems to be the fact that the state is highest user of insecticides and pesticides in the nation. However dichloropropene is a dangerous fumigant and pesticide that is listed as a carcinogen, so it is concerning that its use is still so high, especially becasue it has caused workers to develop cancer. Potash is a fertilizer for the soil, and a possible reason that California has to use more of it is becasue the soil in california has less natural compounds to promote growth. Additionally, the scale of California's strawberry industry is much larger than Florida's which could lead to less ability for sustainable farming practices, thus leading to a more heavy reliance on potash and other fertilizers. Thiram is a fungicide, that due to its nature to be mobile enough to reach water sources and influence aquatic life, has a very regulated used. It is possible that both California and Florida, are using Thiram as much as they can, hence the close value given for both.
+
+# Sales and Production
+
+When examining the sales and production of strawberries for both states, it seemed necessary to find more data. As stated previously, USDA was used to obtain another data set giving sales and production information for strawberries across California and Florida, over multiple years.
+
+```{r}
+#| echo: false
+#| label: Cleaning the sales and production strawberries data set
+
+
+sp_straw = read.csv("strawberry_sales&production.csv")
+
+# getting rid of unnecessary columns
+# strawberries listed for every commodity
+sp_straw = sp_straw |> drop_one_val_col() |> select(!State.ANSI)
+
+# making the deliminator the same for all instances in Data.Item
+sp_straw$Data.Item = gsub(" - ", ", ", as.character(sp_straw$Data.Item))
+
+# cutting off fruit into its own column to remove uneccessary info
+sp_straw = sp_straw |> separate_wider_delim(
+          cols = Data.Item,
+          delim = ", ",
+          names = c("Fruit", "Type"),
+          too_few = "align_start",
+          too_many = "merge",
+)
+
+# separating organic status from remaining data.item column
+sp_straw = sp_straw |> separate_wider_delim(
+      cols = Type,
+      delim = "ANIC, ",
+      names = c("Type", "Measure"),
+      too_few = "align_end",
+      too_many = "merge",
+)
+
+# Can remove fruit bc all strawberries
+# can remove type, because info is given in Domain column
+      # if organic will say organic status in domain column
+# getting rid of row of domain category bc it duplicated info already in table
+sp_straw = sp_straw |> select(!Fruit & !Type) |>
+  filter(!Domain.Category == "ORGANIC STATUS: (NOP USDA CERTIFIED & EXEMPT)")
+
+# Fixing comma issues and aesthetic issues before using separate wider delim
+sp_straw$Measure = gsub("FRESH MARKET, SALES", "SALES IN FRESH MARKET",
+                  as.character(sp_straw$Measure))
+
+sp_straw$Measure = gsub("PROCESSING, SALES", "SALES IN PROCESSING",
+                  as.character(sp_straw$Measure))
+
+sp_straw$Measure = gsub("FRESH MARKET, PRODUCTION", "PRODUCTION FOR FRESH MARKET",
+                  as.character(sp_straw$Measure))
+
+sp_straw$Measure = gsub("PROCESSING, PRODUCTION", "PRODUCTION FOR PROCESSING",
+                  as.character(sp_straw$Measure))
+
+# 
+sp_straw = sp_straw |> separate_wider_delim(
+          cols = Measure,
+          delim = ", ",
+          names = c("Econ","Measure"),
+          too_many = "merge",
+)
+
+```
+
+## Sales of Strawberries
+
+While the new data set provided some more information USDA only gave sales statistics for organic strawberries. Although the new data set showed the different types of markets the organic strawberries were sold in, encompassing processing, conventional, organic, and fresh markets, there was not enough reporting for them, and it still did not seem to be enough data points for meaningful visualization of the different markets. However when looking at sales, without breaking it down into the different markets, there was a decent amount of data for California and Florida.
+
+```{r}
+#| echo: false
+
+#| label: cleaning table for sales of strawberries
+
+# all have organic status
+
+# focusing only on sales values
+s_straw = sp_straw |> filter(Econ == "SALES" |
+                              Econ == "SALES IN FRESH MARKET" |
+                              Econ == "SALES IN PROCESSING" |
+                              Econ == "SALES IN CONVENTIONAL MARKETS" |
+                              Econ == "SALES IN ORGANIC MARKETS")
+
+# (H) means cv at least 99.95
+s_straw$CV.... = sub("(H)", "99.95", as.character(s_straw$CV....), fixed = TRUE)
+
+# Removing rows from data where info was witheld
+s_straw = s_straw |> filter( ! Value == " (D)")
+
+# To be able to graph data need values to be numbers
+s_straw$Value = parse_number(s_straw$Value)
+
+# domain.category does not give new info
+s_straw = s_straw |> select(!Domain.Category)
+```
+
+### Table of Sales for California and Florida
+
+```{r}
+#| echo: false
+#| lable: Making the table for Sales 
+
+### Table for Sales of Strawberries for California and Florida
+# All rows with sales information have organic status
+# removing redundant columns
+# Focusing on yearly data where both California and Florida have reports
+S_straw = s_straw |> filter(Econ == "SALES" & Measure == "MEASURED IN $") |>
+                   drop_one_val_col() |>
+                    filter(Year == 2021 | Year == 2019 | Year == 2016)
+
+kable(S_straw, booktabs = TRUE, 
+      caption = "STRAWBERRY SALES IN DOLLARS") %>%
+  kable_styling(latex_options = "striped", font_size = 10)
+```
+
+```{r}
+#| echo: false
+
+#| label: This code was to make tables to consider comparisons across states of the various markets
+
+## This results of this code frustratingly did not give enough meaningful
+## information due to inconsistent reporting
+
+# Seeing if it is a good idea to make a graph the various markets of a state
+# over time
+
+# # first look at Florida
+# test_1 = s_straw |> filter(Measure == "MEASURED IN $") |>
+#     drop_one_val_col() |> 
+#   mutate("$ in Millions" = Value / 1000000) |> filter(State == "FLORIDA")
+# 
+
+# # For Florida besides sales, the only specific market shown is the fresh market
+# # And the Fresh market sales is the same as the sales for Florida
+
+
+# ft = test_1 |> filter(Econ == "SALES")
+# 
+
+# cant compare other markets of california with other markets of Florida, because
+# of the limited markets in florida, but can try to compare fresh markets against each other
+# 
+# esquisser(test_1)
+# 
+# 
+# test_2 = s_straw |> filter(Measure == "MEASURED IN $") |>
+#     drop_one_val_col() |> 
+#   mutate("$ in Millions" = Value / 1000000) |> filter(State == "CALIFORNIA") |>
+#   filter(Econ == "SALES IN FRESH MARKET")
+# 
+# ct = bind_rows(ft, test_2)
+# esquisser(ct)
+# 
+# 
+# ggplot(ct) +
+#   aes(x = Year, y = `$ in Millions`, colour = State) +
+#   geom_area() +
+#   scale_color_manual(
+#     values = c(CALIFORNIA = "#25F94F",
+#     FLORIDA = "#F781BF")
+#   ) +
+#   labs(
+#     x = "Year",
+#     y = "Sales in Millions of Dollars",
+#     title = "Fresh Market Sales"
+#   ) +
+#   ggthemes::theme_economist()
+
+# Plot is too similar to plot of just sales, and does not seem to add much 
+# to the document so is not used
+
+
+
+```
+
+### Data Visualization of Sales
+
+```{r}
+#| echo: false
+#| label: Data Visualization of Strawberry Sales
+
+S_straw = S_straw |> mutate("$ in Millions" = Value / 1000000)
+
+# esquisser(S_straw)
+ggplot(S_straw) +
+  aes(x = Year, y = `$ in Millions`, colour = State) +
+  geom_line() +
+  scale_color_hue(direction = 1) +
+  labs(
+    x = "Year",
+    y = "Sales in Millions of Dollars",
+    title = "Figure 2: Strawberry Sales for California and Florida"
+  ) +
+  ggthemes::theme_stata()
+
+```
+
+### Discussion
+
+While it makes sense that California would have more sales than Florida. What is interesting and noticeable is that the rate at which California's sales have increased is higher. The fact that the industry is selling more could explain the states reliance on strawberry farming revenue and why it continues to use harmful carcinogenic chemicals in much larger quanitities than any other state.
+
+## Production of Strawberries
+
+For examining the production of strawberries the only options are seemingly total production, production for fresh market, and production for processing. Initially focused on just the plain production of strawberries without a focus on the market.
+
+```{r}
+#| echo: false
+#| label: cleaning the table focusing on strawberry production
+# sp_straw
+
+# Only focusing on rows related to production
+p_straw = sp_straw |> filter(Econ == "PRODUCTION" |
+                              Econ == "PRODUCTION FOR FRESH MARKET" |
+                              Econ == "PRODUCTION FOR PROCESSING")
+# getting rid of uneccessary columns
+p_straw = p_straw |> filter(! Value == " (D)") |>
+                  drop_one_val_col()
+
+# making the values column workable numbers
+p_straw$Value = parse_number(p_straw$Value)
+
+
+```
+
+### Table of Strawberry Production for California and Florida
+
+```{r}
+
+#| echo: false
+#| label creating table of Production of Strawberries
+
+
+### Table for Production of Strawberries for California and Florida in CWT
+P_straw = p_straw |> filter(Econ == "PRODUCTION" & Measure == "MEASURED IN CWT") |>
+                    drop_one_val_col()
+
+P_straw = P_straw |> mutate("CWT in thousands" = Value / 1000)
+
+# Generating the table of first 20 values
+prod_table = head(P_straw, 20)
+prod_table |> select(!Value) |> 
+  kable( booktabs = TRUE,
+          caption = "Amount of Strawberries Produced") %>%
+  kable_styling(latex_options = "striped", font_size = 10)
+
+
+```
+
+### Data Visualization of Production of Strawberries
+
+```{r}
+#| echo: false
+#| label: Data Visualization of Production of Strawberres for Califronai and Florida
+
+# esquisser(P_straw)
+
+ggplot(P_straw) +
+  aes(x = Year, y = `CWT in thousands`, colour = State) +
+  geom_line() +
+  scale_color_hue(direction = 1) +
+  labs(
+    x = "Year",
+    y = "CWT in Thousands",
+    title = "Figure 3: Strawberry Production of California and Florida"
+  ) +
+  ggthemes::theme_stata()
+
+```
+
+### Discussion
+
+The graph of the production seems to be in line with the sales of each state. However there was a dip in production for California between 2015 and 2020, that does not seem to be represented in sales. This could be due to a number of reasons, but probably has most to do with scarcity.
